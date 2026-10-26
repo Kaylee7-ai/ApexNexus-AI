@@ -1,3 +1,4 @@
+
 """ApexNexus AI — polished defensive cybersecurity workspace."""
 
 from __future__ import annotations
@@ -6,10 +7,11 @@ import html
 import streamlit as st
 from dotenv import load_dotenv
 
+load_dotenv()
+
 from agent import ApexNexusAgent
 from tools import generate_security_report
 
-load_dotenv()
 
 st.set_page_config(
     page_title="ApexNexus AI | Security Operations",

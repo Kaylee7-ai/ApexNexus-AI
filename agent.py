@@ -13,6 +13,8 @@ import os
 import re
 import urllib.error
 import urllib.request
+import subprocess
+from pathlib import Path
 
 from dataclasses import asdict, dataclass
 from typing import Any
@@ -1293,6 +1295,85 @@ class ApexNexusAgent:
                 "Please type a question or security concern first.",
                 "Empty input.",
             )
+
+        # Local Scout guard before any security tool or external AI.
+        scout_bridge = (
+            Path(__file__).resolve().parent
+            / "scout-intent"
+            / "scout-bridge.mjs"
+        )
+
+        try:
+            scout_run = subprocess.run(
+                ["node", str(scout_bridge)],
+                input=json.dumps({"prompt": text}),
+                capture_output=True,
+                text=True,
+                timeout=10,
+                cwd=str(scout_bridge.parent),
+                check=False,
+            )
+
+            if scout_run.returncode != 0:
+                raise RuntimeError("Scout bridge process failed")
+
+            scout_decision = json.loads(scout_run.stdout)
+
+            if (
+                scout_decision.get("ok") is not True
+                or scout_decision.get("signaturePresent") is not True
+            ):
+                raise RuntimeError("Scout returned an invalid decision")
+
+        except (
+            OSError,
+            subprocess.TimeoutExpired,
+            json.JSONDecodeError,
+            RuntimeError,
+        ):
+            return self._assessment(
+                "scout_guard",
+                "The Scout safety check is unavailable, so ApexNexus "
+                "did not process this request. Check Node.js and the "
+                "Scout bridge, then retry.",
+                "Scout safety check unavailable.",
+                "UNKNOWN",
+                evidence=[
+                    "The local Scout bridge did not return a valid decision."
+                ],
+                status="blocked",
+            )
+
+        if str(scout_decision.get("risk", "")).lower() == "block":
+            reason = str(
+                scout_decision.get("reason")
+                or "Scout detected a blocked request."
+            )
+
+            result = self._assessment(
+                "scout_guard",
+                "ApexNexus blocked this request before running security "
+                "tools or contacting an external AI provider.\n\n"
+                f"Reason: {reason}",
+                "Scout blocked the request.",
+                "HIGH",
+                findings=[{
+                    "source": "Scout Intent",
+                    "intent": scout_decision.get("intent", "GENERAL"),
+                    "reason": reason,
+                }],
+                evidence=[
+                    "The local Scout decision returned a blocking risk level."
+                ],
+                status="blocked",
+            )
+
+            self.history.extend([
+                {"role": "user", "content": text},
+                {"role": "assistant", "content": result.response},
+            ])
+            self.history = self.history[-20:]
+            return result
 
         workspace = (category or "Command Center").strip().lower()
         intent = self._intent(text)
