@@ -39,10 +39,13 @@ try {
     )
   }));
 } catch (error) {
-  process.stderr.write(
-    `Scout bridge failed: ${
-      error instanceof Error ? error.name : "UnknownError"
-    }\n`
-  );
+  const errorName =
+    error instanceof Error ? error.name : "UnknownError";
+
+  process.stdout.write(JSON.stringify({
+    ok: false,
+    errorName,
+  }));
+  process.stderr.write(`Scout bridge failed: ${errorName}\n`);
   process.exitCode = 1;
 }

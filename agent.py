@@ -1315,7 +1315,18 @@ class ApexNexusAgent:
             )
 
             if scout_run.returncode != 0:
-                raise RuntimeError("Scout bridge process failed")
+                failed = {}
+                try:
+                    parsed = json.loads(scout_run.stdout or "")
+                    if isinstance(parsed, dict):
+                        failed = parsed
+                except json.JSONDecodeError:
+                    failed = {}
+
+                error_name = str(failed.get("errorName") or "ProcessError")
+                raise RuntimeError(
+                    f"Scout bridge process failed ({error_name})"
+                )
 
             scout_decision = json.loads(scout_run.stdout)
 
@@ -1330,7 +1341,18 @@ class ApexNexusAgent:
             subprocess.TimeoutExpired,
             json.JSONDecodeError,
             RuntimeError,
-        ):
+        ) as exc:
+            if isinstance(exc, subprocess.TimeoutExpired):
+                detail = "Scout timed out."
+            elif isinstance(exc, FileNotFoundError):
+                detail = "Node.js was not found."
+            elif isinstance(exc, json.JSONDecodeError):
+                detail = "Scout returned a response that was not valid JSON."
+            elif isinstance(exc, RuntimeError):
+                detail = str(exc)
+            else:
+                detail = "The Scout process could not be started."
+
             return self._assessment(
                 "scout_guard",
                 "The Scout safety check is unavailable, so ApexNexus "
@@ -1339,7 +1361,8 @@ class ApexNexusAgent:
                 "Scout safety check unavailable.",
                 "UNKNOWN",
                 evidence=[
-                    "The local Scout bridge did not return a valid decision."
+                    "The local Scout bridge did not return a valid decision.",
+                    detail,
                 ],
                 status="blocked",
             )
